@@ -1,2 +1,2 @@
-mcp[cli]
-pywin32
+mcp[cli]>=1.2.0
+pywin32>=305
