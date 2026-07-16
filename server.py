@@ -33,6 +33,24 @@ def create_diagram(template: str = "") -> str:
 
 
 @mcp.tool()
+def open_diagram(file_path: str) -> str:
+    """
+    Open an existing Visio diagram (.vsdx) and make it the active document.
+
+    Use this FIRST when modifying a diagram that already exists — every other tool
+    (add_shape, modify_shape, list_shapes, export_page) acts on the active document.
+    If the file is already open in Visio, it is activated rather than reopened.
+
+    Args:
+        file_path: Path to the .vsdx file. Absolute paths are strongly preferred.
+    Returns:
+        The name of the opened document.
+    """
+    name = visio.open_diagram(file_path)
+    return f"Opened diagram: {name}"
+
+
+@mcp.tool()
 def save_diagram(file_path: str) -> str:
     """
     Save the active Visio diagram to a file.

@@ -355,6 +355,26 @@ class VisioClient:
             pass
         return doc.Name
 
+    def open_diagram(self, file_path: str) -> str:
+        """Open an existing .vsdx and make it the active document. Returns the document name."""
+        abs_path = os.path.abspath(file_path)
+        if not os.path.exists(abs_path):
+            raise FileNotFoundError(
+                f"No such Visio file: {abs_path}. Pass an absolute path, "
+                f"or use create_diagram() to start a new one."
+            )
+        # If Visio already has it open, activate it rather than opening a second copy.
+        for i in range(1, self.app.Documents.Count + 1):
+            try:
+                doc = self.app.Documents.Item(i)
+                if os.path.normcase(doc.FullName) == os.path.normcase(abs_path):
+                    doc.Activate()
+                    return doc.Name
+            except Exception:
+                continue
+        doc = self.app.Documents.Open(abs_path)
+        return doc.Name
+
     def save_diagram(self, file_path: str) -> str:
         """Save the active diagram to a file path."""
         doc = self.active_doc
