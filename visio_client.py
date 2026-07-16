@@ -4,10 +4,13 @@ Provides a clean Python interface to Microsoft Visio via win32com.
 All styling follows STYLE_GUIDE.md conventions automatically.
 """
 
+import atexit
 import json
-import win32com.client
 import os
+import winreg
+
 import pythoncom
+import win32com.client
 from pathlib import Path
 
 
@@ -116,6 +119,15 @@ TIER_BAND_FILL_TRANS = 70      # percent
 TIER_BAND_LABEL_FONT = 8      # pt
 
 
+def check_visio_installed() -> bool:
+    """Check that Visio's COM class is registered, without launching Visio."""
+    try:
+        winreg.OpenKey(winreg.HKEY_CLASSES_ROOT, r"Visio.Application")
+        return True
+    except OSError:
+        return False
+
+
 class VisioClient:
     """Wrapper around the Visio COM object model with STYLE_GUIDE.md compliance."""
 
@@ -132,20 +144,43 @@ class VisioClient:
 
     def __init__(self):
         self._app = None
+        self._owns_app = False  # did WE start Visio, or attach to the user's session?
         self._stencils = {}
         self._stencil_map = _load_stencil_map()
         self._stencil_paths_registered = False
+        atexit.register(self._shutdown)
 
     @property
     def app(self):
         if self._app is None:
+            if not check_visio_installed():
+                raise RuntimeError(
+                    "Microsoft Visio is not installed, or its COM class is not registered. "
+                    "This server requires Visio Professional on Windows, launched at least "
+                    "once so COM registration completes."
+                )
             pythoncom.CoInitialize()
             try:
                 self._app = win32com.client.GetActiveObject("Visio.Application")
+                self._owns_app = False  # user's own session - never quit it
             except Exception:
                 self._app = win32com.client.Dispatch("Visio.Application")
                 self._app.Visible = True
+                self._owns_app = True  # ours - we clean it up
         return self._app
+
+    def _shutdown(self):
+        """Quit Visio ONLY if this server started it. Never kill a user's own session."""
+        if self._app is not None and self._owns_app:
+            try:
+                # Suppress the "Save changes?" modal, which would hang shutdown
+                # forever with no one to click it. 7 = IDNO; callers save
+                # explicitly via save_diagram().
+                self._app.AlertResponse = 7
+                self._app.Quit()
+            except Exception:
+                pass
+        self._app = None
 
     @property
     def active_doc(self):
