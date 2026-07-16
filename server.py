@@ -9,7 +9,43 @@ import json
 from mcp.server.fastmcp import FastMCP
 from visio_client import VisioClient
 
-mcp = FastMCP(name="Visio Diagram Server")
+mcp = FastMCP(
+    name="Visio Diagram Server",
+    instructions="""Drive Microsoft Visio to build and evolve architecture diagrams.
+
+STATE MODEL - read this first:
+  Tools act on the ACTIVE DOCUMENT and ACTIVE PAGE. There are no document or page
+  arguments. Establish state before mutating anything:
+    - New diagram      -> create_diagram
+    - Existing .vsdx   -> open_diagram (NOT create_diagram)
+    - Unsure           -> list_open_diagrams, then open_diagram
+    - Multi-page       -> add_page / set_active_page, then verify with list_pages
+  set_active_page persists across every later call until changed. Nothing is
+  written to disk until save_diagram.
+
+WORKFLOW:
+  1. DISCOVER  - list_azure_services for valid Azure service keys. Do not guess keys;
+                 they resolve against a curated stencil map and a wrong key fails.
+                 list_stencil_masters inspects a specific stencil.
+  2. STRUCTURE - add_tier_band for horizontal tiers (web/app/data); add_container to
+                 group related shapes. Lay these down BEFORE the shapes inside them.
+  3. PLACE     - add_azure_shape for Azure services, add_shape for generic geometry.
+                 Coordinates are INCHES on an 11 x 8.5 landscape page, origin
+                 bottom-left. Allow ~1.5in between peers to leave room for connectors.
+  4. CONNECT   - list_shapes to get real shape IDs, then connect_shapes. Never assume
+                 an ID; Visio assigns them, not your call order.
+  5. LABEL     - add_text_label for floating notes; modify_shape to set text on a shape.
+  6. DELIVER   - save_diagram (.vsdx, the editable deliverable), then export_page for a
+                 PNG/SVG/JPG preview if one is needed.
+
+RULES:
+  - Styling (corners, fills, arrowheads, fonts) is applied automatically per
+    STYLE_GUIDE.md. Do not hand-set cosmetics; pass fill_color only when it carries
+    meaning.
+  - After any structural change, call list_shapes to re-sync IDs before connecting.
+  - Prefer editing an existing diagram over recreating it from scratch.
+""",
+)
 visio = VisioClient()
 
 
