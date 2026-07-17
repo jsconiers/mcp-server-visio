@@ -4,7 +4,9 @@ Provides a clean Python interface to Microsoft Visio via win32com.
 All styling follows STYLE_GUIDE.md conventions automatically.
 """
 
+import difflib
 import json
+import re
 import win32com.client
 import os
 import pythoncom
@@ -75,6 +77,11 @@ def _load_stencil_map() -> dict:
         with open(STENCIL_MAP_FILE) as f:
             return json.load(f)
     return {}
+
+
+def _norm(name: str) -> str:
+    """Strip to alphanumerics for comparison. Not a key - see _fuzzy_key."""
+    return re.sub(r"[^a-z0-9]", "", (name or "").lower())
 
 
 def _fuzzy_key(name: str) -> str:
@@ -289,7 +296,36 @@ class VisioClient:
         entry = self._stencil_map.get(service)
         if entry:
             return entry["stencil"], entry["master"]
+        # Match on the master's display name ("App Services") or the key tail
+        # ("app-services"), which _fuzzy_key alone does not cover.
+        probe = _norm(service)
+        if probe:
+            for k, v in self._stencil_map.items():
+                if probe in (_norm(v["master"]), _norm(k.split("/")[-1])):
+                    return v["stencil"], v["master"]
         return None
+
+    def suggest_services(self, service: str, n: int = 5) -> list[str]:
+        """
+        Near-matches for a service name that did not resolve.
+
+        Substring containment first - cheap, catches prefixes. Then difflib over
+        the normalized keys and master display names, because containment alone
+        misses the common case: 'azure/functions' is not a substring of
+        'azure/function-apps', so it yields nothing and the caller can only say
+        "unknown", which is true but useless.
+        """
+        probe = _norm(service)
+        if not probe:
+            return []
+        hits = [k for k in self._stencil_map if probe in _norm(k)]
+        if not hits:
+            cand = {_norm(k): k for k in self._stencil_map}
+            cand.update({_norm(v["master"]): k
+                         for k, v in self._stencil_map.items()})
+            hits = [cand[m] for m in difflib.get_close_matches(
+                probe, list(cand), n=n, cutoff=0.6)]
+        return list(dict.fromkeys(hits))[:n]
 
     def _apply_shape_style(self, shape, fill_color: str | None = None):
         """Apply standard shape styling per STYLE_GUIDE.md."""
@@ -466,9 +502,12 @@ class VisioClient:
 
         resolved = self._resolve_azure_service(service)
         if not resolved:
+            near = self.suggest_services(service)
             raise ValueError(
                 f"Unknown Azure service '{service}'. "
-                f"Use list_azure_services() to see available services."
+                + (f"Did you mean: {', '.join(near)}? " if near else "")
+                + f"Use list_azure_services() to see all "
+                  f"{len(self._stencil_map)} available services."
             )
 
         stencil_name, master_name = resolved
